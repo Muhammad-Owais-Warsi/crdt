@@ -59,7 +59,6 @@ function App() {
     const [status, setStatus] = useState("connecting...");
     const [replicas, setReplicas] = useState<string[]>([]);
     const offlineQueueRef = useRef<CrdtOp[]>(loadQueue());
-    const isOfflineRef = useRef(false);
 
     // Cursor tracking
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -160,16 +159,12 @@ function App() {
         const onSync = (msg: SyncMessage) => {
             const prevRga = rgaRef.current;
             const serverNodes = msg.nodes;
-            let hadOfflineChanges = false;
 
             if (prevRga) {
-                // Reconnection: merge local offline state with server state
                 const localNodes = prevRga.serialize();
-                hadOfflineChanges = offlineQueueRef.current.length > 0;
                 const merged = merge(localNodes, serverNodes);
                 rgaRef.current = merged;
             } else {
-                // First connect: just load server state
                 const rga = new RGA(msg.replica);
                 rga.loadState(serverNodes);
                 rgaRef.current = rga;
@@ -178,14 +173,6 @@ function App() {
             syncFromRga();
             setStatus(`connected as ${msg.replica}`);
             setReplicas(msg.replicas);
-
-            // On reconnect: send full merged state to server instead of replaying ops
-            if (hadOfflineChanges) {
-                console.log("Sending full-sync after reconnect");
-                socket.emit("full-sync", rgaRef.current!.serialize());
-                offlineQueueRef.current = [];
-                saveQueue([]);
-            }
         };
 
         const onFullSync = (nodes: SerializedNode[]) => {
@@ -224,14 +211,17 @@ function App() {
         };
 
         const onDisconnect = () => {
-            isOfflineRef.current = true;
             setStatus("disconnected");
-            // Clear all remote cursors on disconnect
             for (const [id] of cursorMapRef.current) removeRemoteCursor(id);
         };
 
         const onConnect = () => {
-            isOfflineRef.current = false;
+            const queue = offlineQueueRef.current;
+            if (queue.length > 0) {
+                for (const op of queue) socket.emit("crdt-op", op);
+                offlineQueueRef.current = [];
+                saveQueue([]);
+            }
         };
 
         socket.on("sync", onSync);
@@ -256,7 +246,7 @@ function App() {
     }, [syncFromRga]);
 
     const emitOp = useCallback((op: CrdtOp) => {
-        if (isOfflineRef.current || !socket.connected) {
+        if (!socket.connected) {
             offlineQueueRef.current.push(op);
             saveQueue(offlineQueueRef.current);
         } else {
