@@ -242,7 +242,78 @@ if user a then h is bold else h i italic
 
 <br/>
 
-now this is out most important function. 
+now this is out most important function. we've noticed that local insert are eve calling this, the reason behind is 
+the cris-cross of operations and getting the parentid
+i.e user a change must also be implmeneted by user b and vice versa. 
+
+i broke this function in parts
+
+1. check of the duplicate nodes that gives it idempotent nature.
+2. second is update the id if the remote and local id are out of sync
+3. then create a node to insert and find the parent node.
+4. a while loop which traverse from bottom to down in search of actual parent
+5. last is insertion itself
+
+
+1 and 2 parts are clear in thmeselves, i'll start with 3.
+```
+2 users a and b, let's say user a wrote abc and the orignal doc is "abc"
+orignal doc -> abc
+// the nodes are therefore stored in teh following way
+idx     id     character
+0      HEAD     ""
+1      A 1      a
+2      A 2      b
+3      A 3      c
+
+user a types -> d
+user b types -> e
+
+now when user a has typed "d" following events take place
+  localInsert(4, "d") -> this fetch the parent i.e (A_3 , "c")
+  remoteInsert(A_4, "d", A_3)
+    now under remoteInsert it passes through all the parts i mentioned above
+    therfore, parentIdx = 3 => insertIdx = 4
+    check (insertIdx < len(nodes_array)) => (4 < 4) = false
+    hence insert at the 4th postion 
+after all this the final document is currently = "abcd"
+
+same things happen when the user b typed "e"
+  localInsert(4, "e") -> this fetch the parent i.e (A_3, "c") 
+  remoteInsert(B_1, "e", A_3)
+  now under remoteInsert it passes through all the parts i mentioned above
+  hence, parentIdx = 3 => insertIdx = 4
+    check (insertIdx < len(nodes_array)) => (4 < 4) = false
+    hence insert at the 4th postion 
+and the final document becomes "abce"
+
+now the operations are criss crossed via websockets 
+user a recieves user b operationa and vice versa
+
+user a got user b operation
+current doc -> abcd
+operation = remoteInsert(B_1, "e", A_3)
+  - it again checks for dupes
+  - parentIdx = 3 and insertIdx = 4
+  - check (insertIdx < len(nodes_array)) => (4 < 5) = true
+     now here we check if the node is the direct child of the parent if not then travel upwards until you find one
+     after the check we got that it is the direct child of the parent 
+     then we compare id's use comapreId function compareId(A_4, B_1) => 4 > 1
+     hence the order will be "abcde"
+
+
+user b got user a operation
+current doc -> abce
+operation = remoteInsert(A_4, "d", "A_3")
+all the checks similar to the above
+parentIdx = 3 => insertIdx = 4
+and finally send in compareId(A_4, B_1) => 4 > 1
+insert at 4 => abcde
+
+```
+
+this shows no matter the operations are been merged they results in the same state and hence the logic is commutative too.
+
 
 ```ts
     remoteInsert(id: ID, character: string, parentID: ID) {

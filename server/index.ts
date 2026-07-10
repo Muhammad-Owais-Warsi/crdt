@@ -87,6 +87,12 @@ io.on("connection", (socket) => {
         socket.broadcast.emit("cursor-op", { ...op, id: replica });
     });
 
+    socket.on("full-sync", (nodes: SerializedNode[]) => {
+        console.log(`${replica} full-sync (${nodes.length} nodes)`);
+        doc.loadState(nodes);
+        socket.broadcast.emit("full-sync", nodes);
+    });
+
     socket.on("disconnect", () => {
         replicas.delete(replica);
         socket.broadcast.emit("replica-left", replica);

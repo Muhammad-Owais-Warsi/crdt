@@ -45,6 +45,7 @@ class Node {
         public tombstone: boolean = false
     ) { }
 }
+// tombstone is alos propagated through network then why
 
 export class RGA {
     private nodes: Node[];
@@ -158,6 +159,8 @@ export class RGA {
 
         this.idGenerator.update(opId.seq);
 
+        // why ?????
+        //
         const current = node.marks[mark];
         if (!current || this.compareIds(opId, current.id)) {
             node.marks[mark] = { id: opId, value };

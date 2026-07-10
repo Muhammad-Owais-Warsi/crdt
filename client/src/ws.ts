@@ -35,4 +35,8 @@ export interface CursorOp {
     color: string;
 }
 
-export const socket = io("http://localhost:4000");
+export const socket = io("http://localhost:4000", {
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 3000,
+    timeout: 5000,
+});

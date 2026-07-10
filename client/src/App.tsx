@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react";
-import { RGA, merge } from "./rga";
+import { RGA, merge, type SerializedNode } from "./rga";
 import { socket, type CrdtOp, type CursorOp, type SyncMessage } from "./ws";
 import "./App.css";
 
@@ -59,6 +59,7 @@ function App() {
     const [status, setStatus] = useState("connecting...");
     const [replicas, setReplicas] = useState<string[]>([]);
     const offlineQueueRef = useRef<CrdtOp[]>(loadQueue());
+    const isOfflineRef = useRef(false);
 
     // Cursor tracking
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -82,6 +83,7 @@ function App() {
     }
 
     function broadcastCursor(pos: number) {
+        if (!socket.connected) return;
         const now = Date.now();
         if (now - lastBroadcastRef.current < 50) return;
         lastBroadcastRef.current = now;
@@ -158,10 +160,12 @@ function App() {
         const onSync = (msg: SyncMessage) => {
             const prevRga = rgaRef.current;
             const serverNodes = msg.nodes;
+            let hadOfflineChanges = false;
 
             if (prevRga) {
                 // Reconnection: merge local offline state with server state
                 const localNodes = prevRga.serialize();
+                hadOfflineChanges = offlineQueueRef.current.length > 0;
                 const merged = merge(localNodes, serverNodes);
                 rgaRef.current = merged;
             } else {
@@ -175,16 +179,20 @@ function App() {
             setStatus(`connected as ${msg.replica}`);
             setReplicas(msg.replicas);
 
-            // Flush queued offline ops after merge is complete
-            const queue = offlineQueueRef.current;
-            if (queue.length > 0) {
-                console.log(`Flushing ${queue.length} queued offline ops`);
-                for (const op of queue) {
-                    socket.emit("crdt-op", op);
-                }
+            // On reconnect: send full merged state to server instead of replaying ops
+            if (hadOfflineChanges) {
+                console.log("Sending full-sync after reconnect");
+                socket.emit("full-sync", rgaRef.current!.serialize());
                 offlineQueueRef.current = [];
                 saveQueue([]);
             }
+        };
+
+        const onFullSync = (nodes: SerializedNode[]) => {
+            const rga = new RGA("remote");
+            rga.loadState(nodes);
+            rgaRef.current = rga;
+            syncFromRga();
         };
 
         const onOp = (op: CrdtOp) => {
@@ -216,34 +224,43 @@ function App() {
         };
 
         const onDisconnect = () => {
+            isOfflineRef.current = true;
             setStatus("disconnected");
             // Clear all remote cursors on disconnect
             for (const [id] of cursorMapRef.current) removeRemoteCursor(id);
         };
 
+        const onConnect = () => {
+            isOfflineRef.current = false;
+        };
+
         socket.on("sync", onSync);
         socket.on("crdt-op", onOp);
         socket.on("cursor-op", onCursorOp);
+        socket.on("full-sync", onFullSync);
         socket.on("new-replica", onNewReplica);
         socket.on("replica-left", onReplicaLeft);
         socket.on("disconnect", onDisconnect);
+        socket.on("connect", onConnect);
 
         return () => {
             socket.off("sync", onSync);
             socket.off("crdt-op", onOp);
             socket.off("cursor-op", onCursorOp);
+            socket.off("full-sync", onFullSync);
             socket.off("new-replica", onNewReplica);
             socket.off("replica-left", onReplicaLeft);
             socket.off("disconnect", onDisconnect);
+            socket.off("connect", onConnect);
         };
     }, [syncFromRga]);
 
     const emitOp = useCallback((op: CrdtOp) => {
-        if (socket.connected) {
-            socket.emit("crdt-op", op);
-        } else {
+        if (isOfflineRef.current || !socket.connected) {
             offlineQueueRef.current.push(op);
             saveQueue(offlineQueueRef.current);
+        } else {
+            socket.emit("crdt-op", op);
         }
     }, []);
 
