@@ -38,12 +38,14 @@ interface SyncMessage {
     replicas: string[];
 }
 
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: CLIENT_ORIGIN }));
 const server = createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173",
+        origin: CLIENT_ORIGIN,
     },
 });
 
@@ -100,7 +102,7 @@ io.on("connection", (socket) => {
     });
 });
 
-io.listen(4000);
-server.listen(3000, () => {
-    console.log("server running at http://localhost:3000");
+const PORT = Number(process.env.PORT) || 4000;
+server.listen(PORT, () => {
+    console.log(`server running at http://localhost:${PORT}`);
 });

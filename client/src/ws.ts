@@ -35,7 +35,9 @@ export interface CursorOp {
     color: string;
 }
 
-export const socket = io("http://localhost:4000", {
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
+
+export const socket = io(SERVER_URL, {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 3000,
     timeout: 5000,
