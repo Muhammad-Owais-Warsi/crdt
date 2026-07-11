@@ -1,16 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RGA, merge } from "./rga";
 
-function make_RGApair(aId: string, bId: string, baseText: string) {
-    const a = new RGA(aId);
-    const b = new RGA(bId);
-    for (const ch of baseText) {
-        const op = a.localInsert(a.toString().length, ch);
-        b.remoteInsert(op.id, op.character, op.parent!);
-    }
-    return { a, b };
-}
-
 function makeReplicas(count: number, baseText: string): RGA[] {
     const seed = new RGA("seed");
     for (const ch of baseText) seed.localInsert(seed.toString().length, ch);

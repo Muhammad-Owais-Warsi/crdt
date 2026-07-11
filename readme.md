@@ -1,4 +1,32 @@
+## Table of Contents
+
+- [Overview](#overview)
+- [Project Structure](#project-structure)
+- [Running Locally](#running-locally)
+- [rga.ts - The Core Engine](#rgats---the-core-engine)
+  - [Type Definitions](#type-definitions)
+  - [IDGenerator](#idgenerator)
+  - [Node Class](#node-class)
+  - [RGA Class](#rga-class)
+    - [Initialization](#initialization)
+    - [compareIds](#compareids)
+    - [localInsert](#localinsert)
+    - [localDelete and remoteDelete](#localdelete-and-remotedelete)
+    - [Formatting (localSetMark / remoteSetMark)](#formatting-localsitmark--remotesetmark)
+    - [remoteInsert](#remoteinsert)
+- [CRDT Properties](#crdt-properties)
+  - [Commutativity](#commutativity)
+  - [Associativity](#associativity)
+  - [Idempotency](#idempotency)
+- [Tests](#tests)
+
+---
+
+## Overview
+
 This project contains a really basic implementation of CRDT(conflict-free data type) using RGA (Replicted-Growable Array). 
+
+## Project Structure
 
 Project is divided into 2 main folders 
  - `client`: it contains react code using `vite` and all the logic related to ui
@@ -7,6 +35,7 @@ Project is divided into 2 main folders
 in both the folders there is one common file name `rga.ts`. 
 it is the core engine of handling all the operations performed by the user on the editor ui. i'll walk you through this file very soon. 
 
+## Running Locally
 
 to run the project locally 
 - clone the repo
@@ -15,10 +44,15 @@ to run the project locally
 
 now open the browser `http://localhost:5173` and test it. 
 
-rga.ts 
+---
+
+## rga.ts - The Core Engine
+
 this file contains the core logic of CRDT where all the insertion, deletion and merge logic rest. 
 
 let's understand it step-by-step
+
+### Type Definitions
 
 these are some basic type definitions used in our engine. 
 ```ts
@@ -42,7 +76,9 @@ export interface SerializedNode {
     marks: Partial<Record<MarkType, MarkValue>>;
 }
 ```
-<br/>
+
+### IDGenerator
+
 next section is the `IDGenrator` class, that generates the id for each of the node (in very simple -> charcter typed by the user). 
 `next`: generates the next id
 `update`: update the current id with the remote id in order to sync them, this function is necessary beacuse lets say 
@@ -50,7 +86,6 @@ user a is online and idle -> the counter is still at 0
 user b types -> 100 words -> the counter is at 100
 user a types now -> counter must update from 0 -> x
 
-<br/>
 now engine is confused who typed first, whose update top keep and whose not 
 it will think user a typed first and hence break all the order. 
 why we compare with id? -> answer very soon
@@ -73,7 +108,8 @@ class IDGenerator {
     }
 }
 ```
-<br/>
+
+### Node Class
 
 a node class, in very simple terms any character typed by the user is assigned with unique and id and is stored as a node.
 marks here is for the formatting (bold, italic etc...)
@@ -91,8 +127,11 @@ class Node {
 
 ```
 
-<br/>
+### RGA Class
+
 now the next class is `RGA` class that is the main class consisting all the functions related to insertiona and deletion. let's see the important ones
+
+#### Initialization
 
 basic initialisation
 to keep things simple, we're storing nodes in array.
@@ -115,7 +154,7 @@ to keep things simple, we're storing nodes in array.
     }
 ```
 
-<br />
+#### compareIds
 
 here we compare the id's. this also answers why are we even comparing with id
 lets say 
@@ -146,7 +185,7 @@ this produce the deterministic relative ordering and hence all the replicas/clie
     }
 ```
 
-<br/>
+#### localInsert
 
 this function runs when inserting the local changes, this ultimately use the `remoteInsert` thst is used to insret the incoming change / node
 ```ts
@@ -157,7 +196,7 @@ this function runs when inserting the local changes, this ultimately use the `re
     }
 ```
 
-<br/>
+#### localDelete and remoteDelete
 
 similarly another function, this deletes the nodes. 
 we never remove them from list, insetad mark them as tombstone and ignore them when rendering
@@ -170,9 +209,6 @@ we never remove them from list, insetad mark them as tombstone and ignore them w
     }
 ```
 
-
-<br/>
-
 this runs when we get signal that someone deleted the node, it first finds the node by id and then mark it true if not yet done
 
 this function is idempotent
@@ -183,7 +219,7 @@ this function is idempotent
     }
 ```
 
-<br />
+#### Formatting (localSetMark / remoteSetMark)
 
 these functions helps to propagate the formatting onto the text such as bold, italic, headings etc.
 
@@ -240,7 +276,7 @@ if user a then h is bold else h i italic
     }
 ```
 
-<br/>
+#### remoteInsert
 
 now this is out most important function. we've noticed that local insert are eve calling this, the reason behind is 
 the cris-cross of operations and getting the parentid
@@ -368,3 +404,110 @@ this shows no matter the operations are been merged they results in the same sta
     }
 
 ```
+
+## CRDT Properties
+
+for a data structure to be a CRDT it must satisfy 3 properties. let's prove each with examples.
+
+
+the detailed explanation and dry run is already done in the above sections
+### Commutativity
+
+`merge(A, B) = merge(B, A)` — the order of merging two states does not matter.
+
+```
+base state: "ab"
+
+user a types "x" after "a"  -> A_1 {replica:'A', seq:1, parent:'HEAD'}
+user b types "y" after "a"  -> B_1 {replica:'B', seq:1, parent:'HEAD'}
+
+state a = [HEAD, A_1("x"), A_2("b")]
+state b = [HEAD, B_1("y"), B_2("b")]
+```
+
+**merge(A, B):**
+1. load A -> nodes: [HEAD, A_1("x"), A_2("b")]
+2. load B -> B_1("y") parent is HEAD, walks past A_1("x")
+   - compareIds(B_1, A_1) -> seq 1 == 1, compare replica 'B' > 'A' -> true
+   - B_1 goes after A_1
+   - result: [HEAD, A_1("x"), B_1("y"), "b"]
+
+**merge(B, A):**
+1. load B -> nodes: [HEAD, B_1("y"), B_2("b")]
+2. load A -> A_1("x") parent is HEAD, walks past B_1("y")
+   - compareIds(A_1, B_1) -> seq 1 == 1, compare replica 'A' > 'B' -> false
+   - A_1 goes before B_1
+   - result: [HEAD, A_1("x"), B_1("y"), "b"]
+
+both produce `"xyb"` or `"xby"` depending on id comparison — **same result regardless of merge order**.
+
+### Associativity
+
+`merge(merge(A, B), C) = merge(A, merge(B, C))` — grouping does not matter.
+
+```
+base state: ""
+
+user A inserts "1" at root -> A_1
+user B inserts "2" at root -> B_1
+user C inserts "3" at root -> C_1
+
+state A = [HEAD, A_1("1")]
+state B = [HEAD, B_1("2")]
+state C = [HEAD, C_1("3")]
+```
+
+**left side: merge(merge(A, B), C)**
+1. merge(A, B):
+   - load A: [HEAD, A_1("1")]
+   - load B: B_1("2") parent is HEAD, compareIds(B_1, A_1)
+     - seq 1 == 1, 'B' > 'A' -> B_1 goes after A_1
+   - result: [HEAD, A_1("1"), B_1("2")]
+2. merge with C:
+   - load C: C_1("3") parent is HEAD, walks past A_1 and B_1
+   - compareIds(C_1, A_1): seq 1 == 1, 'C' > 'A' -> after A_1
+   - compareIds(C_1, B_1): seq 1 == 1, 'C' > 'B' -> after B_1
+   - result: [HEAD, A_1("1"), B_1("2"), C_1("3")]
+
+**right side: merge(A, merge(B, C))**
+1. merge(B, C):
+   - load B: [HEAD, B_1("2")]
+   - load C: C_1("3") after B_1
+   - result: [HEAD, B_1("2"), C_1("3")]
+2. merge with A:
+   - load A: A_1("1") parent is HEAD
+   - compareIds(A_1, B_1): seq 1 == 1, 'A' > 'B' -> false -> before B_1
+   - compareIds(A_1, C_1): seq 1 == 1, 'A' > 'C' -> false -> before C_1
+   - result: [HEAD, A_1("1"), B_1("2"), C_1("3")]
+
+both produce `"123"` — **grouping does not affect the result**.
+
+### Idempotency
+
+`merge(A, A) = A` — merging a state with itself is a no-op.
+
+```
+state A = [HEAD, A_1("x"), A_2("y")]
+```
+
+**merge(A, A):**
+1. load A -> nodes: [HEAD, A_1("x"), A_2("y")]
+2. load A again:
+   - A_1("x"): `findById(A_1)` returns the existing node -> **duplicate check passes, skip**
+   - A_2("y"): `findById(A_2)` returns the existing node -> **duplicate check passes, skip**
+   - result: [HEAD, A_1("x"), A_2("y")]
+
+same state, **no duplicates, no change**.
+
+## tests
+test file is present in `server/rga.test.ts`
+it tests the several cases of concurrent formatting on a single document 
+example
+- 10 concurrent wqrites
+- 5 concurrent wites and 5 deletes
+- etc...
+
+after this there are some utility functions such as 
+merge(): it merges the 2 document by calling remoteInsert()
+mergeAll(): it call merge() to merge given number of states
+makeReplicas(): create n number of replica with a base text
