@@ -8,6 +8,8 @@ interface Run {
     text: string;
     bold: boolean;
     italic: boolean;
+    heading: boolean;
+    code: boolean;
 }
 
 // Naive prefix/suffix diff: handles insert, delete, and "select + retype"
@@ -317,6 +319,12 @@ function App() {
             } else if (event.key === "i") {
                 event.preventDefault();
                 toggleMark("italic");
+            } else if (event.key === "e") {
+                event.preventDefault();
+                toggleMark("code");
+            } else if (event.key === "h") {
+                event.preventDefault();
+                toggleMark("heading");
             }
         },
         [toggleMark],
@@ -342,6 +350,12 @@ function App() {
                 <button type="button" onMouseDown={(e) => { e.preventDefault(); toggleMark("italic"); }}>
                     <em>I</em>
                 </button>
+                <button type="button" onMouseDown={(e) => { e.preventDefault(); toggleMark("heading"); }}>
+                    H
+                </button>
+                <button type="button" onMouseDown={(e) => { e.preventDefault(); toggleMark("code"); }}>
+                    &lt;/&gt;
+                </button>
             </div>
             <div className="textarea-wrap">
                 <textarea
@@ -361,8 +375,10 @@ function App() {
             <div className="preview">
                 {runs.map((run, i) => {
                     let content: ReactNode = run.text || "\u00A0";
+                    if (run.code) content = <code key={`c-${i}`}>{content}</code>;
                     if (run.italic) content = <em key={`i-${i}`}>{content}</em>;
                     if (run.bold) content = <strong key={`b-${i}`}>{content}</strong>;
+                    if (run.heading) content = <h2 key={`h-${i}`}>{content}</h2>;
                     return <span key={i}>{content}</span>;
                 })}
             </div>

@@ -3,7 +3,7 @@ export interface ID {
     seq: number;
 }
 
-export type MarkType = "bold" | "italic";
+export type MarkType = "bold" | "italic" | "heading" | "code";
 
 export interface MarkValue {
     id: ID;
@@ -235,23 +235,25 @@ export class RGA {
 
     // Groups visible characters into runs of contiguous, identically-marked
     // text, which is what a rich-text UI layer actually wants to render.
-    getRuns(): { text: string; bold: boolean; italic: boolean }[] {
-        const runs: { text: string; bold: boolean; italic: boolean }[] = [];
+    getRuns(): { text: string; bold: boolean; italic: boolean; heading: boolean; code: boolean }[] {
+        const runs: { text: string; bold: boolean; italic: boolean; heading: boolean; code: boolean }[] = [];
 
         for (const node of this.getLinerNodes()) {
             if (node.tombstone) continue;
             const bold = node.marks.bold?.value ?? false;
             const italic = node.marks.italic?.value ?? false;
+            const heading = node.marks.heading?.value ?? false;
+            const code = node.marks.code?.value ?? false;
 
             const last = runs[runs.length - 1];
-            if (last && last.bold === bold && last.italic === italic) {
+            if (last && last.bold === bold && last.italic === italic && last.heading === heading && last.code === code) {
                 last.text += node.character;
             } else {
-                runs.push({ text: node.character, bold, italic });
+                runs.push({ text: node.character, bold, italic, heading, code });
             }
         }
 
-        if (runs.length === 0) runs.push({ text: "", bold: false, italic: false });
+        if (runs.length === 0) runs.push({ text: "", bold: false, italic: false, heading: false, code: false });
         return runs;
     }
 
